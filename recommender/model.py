@@ -1,60 +1,47 @@
-import numpy as np
-from recommender.data_loader import load_data, load_movies
-from recommender.item_cf import build_item_similarity
+from collections import defaultdict
+from recommender.data_loader import load_ratings
 
 print("🔄 Loading recommendation model (safe mode)...")
 
-# Load lightweight data only
-ratings, user_movie_matrix, movie_ids = load_data()
-movies_df = load_movies()
+# Load once (small memory footprint)
+ratings = load_ratings()
 
-_item_similarity = None  # LAZY LOADED
-
-print("✅ Core data loaded (no heavy matrices yet)")
-
-
-# ---------- INTERNAL HELPERS ----------
-
-def get_item_similarity():
-    global _item_similarity
-    if _item_similarity is None:
-        print("⚡ Computing item similarity lazily (first request only)...")
-        _item_similarity = build_item_similarity(user_movie_matrix)
-    return _item_similarity
-
-
-def get_movie_details(movie_ids_list):
-    return (
-        movies_df[movies_df["movieId"].isin(movie_ids_list)]
-        [["movieId", "title", "genres"]]
-        .to_dict(orient="records")
-    )
-
-
-# ---------- SESSION / RATING BASED RECOMMENDATION ----------
+print("✅ Core data loaded (no heavy matrices)")
 
 def get_recommendations_from_ratings(user_ratings, top_n=10):
     """
-    user_ratings = [{movieId, rating}, ...]
+    Render-safe collaborative filtering
+    No sklearn, no matrices
     """
 
-    item_similarity = get_item_similarity()
+    if len(user_ratings) < 3:
+        return [], "Not enough ratings"
 
-    movie_index = {mid: i for i, mid in enumerate(movie_ids)}
-    user_vector = np.zeros(len(movie_ids))
+    input_movie_ids = {r.movieId for r in user_ratings}
 
-    for r in user_ratings:
-        if r.movieId in movie_index:
-            user_vector[movie_index[r.movieId]] = r.rating
+    # 1️⃣ Find users who rated the same movies
+    similar_users = set()
 
-    scores = item_similarity.dot(user_vector)
+    for _, row in ratings.iterrows():
+        if row["movieId"] in input_movie_ids and row["rating"] >= 3:
+            similar_users.add(row["userId"])
 
-    # Remove already-rated movies
-    for r in user_ratings:
-        if r.movieId in movie_index:
-            scores[movie_index[r.movieId]] = 0
+    # 2️⃣ Score candidate movies
+    scores = defaultdict(float)
+    counts = defaultdict(int)
 
-    top_indices = np.argsort(scores)[::-1][:top_n]
-    recommended_movie_ids = [movie_ids[i] for i in top_indices]
+    for _, row in ratings.iterrows():
+        if row["userId"] in similar_users:
+            mid = row["movieId"]
+            if mid not in input_movie_ids:
+                scores[mid] += row["rating"]
+                counts[mid] += 1
 
-    return recommended_movie_ids, "Based on your selected and rated movies"
+    # 3️⃣ Rank by average rating
+    ranked = sorted(
+        scores.keys(),
+        key=lambda m: scores[m] / counts[m],
+        reverse=True
+    )
+
+    return ranked[:top_n], "Based on similar users"
