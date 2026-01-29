@@ -63,20 +63,13 @@ def recommend_from_ratings(data: RatingRequest, top_n: int = 10):
         data.ratings, top_n
     )
 
-    # 🔥 FIX: flatten if nested list
-    if movie_ids and isinstance(movie_ids[0], list):
-        movie_ids = movie_ids[0]
-
     movie_map = {m["movieId"]: m for m in MOVIE_CATALOG}
 
     recommended_movies = [
-        movie_map[mid]
-        for mid in movie_ids
-        if isinstance(mid, int) and mid in movie_map
+        movie_map[mid] for mid in movie_ids if mid in movie_map
     ]
 
     return {
         "recommendations": recommended_movies,
         "reason": reason
     }
-
