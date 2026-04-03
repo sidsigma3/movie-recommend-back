@@ -1,12 +1,15 @@
 import pandas as pd
+from scipy.sparse import csr_matrix
 
-RATINGS_PATH = "data/ratings.csv"
+def load_data():
+    ratings = pd.read_csv("data/ratings.csv")
 
-def load_ratings():
-    """
-    Load ratings once at startup
-    Columns expected: userId, movieId, rating
-    """
-    df = pd.read_csv(RATINGS_PATH)
-    df = df[["userId", "movieId", "rating"]]
-    return df
+    user_movie_df = ratings.pivot_table(
+        index="userId",
+        columns="movieId",
+        values="rating"
+    ).fillna(0)
+
+    user_movie_matrix = csr_matrix(user_movie_df.values)
+
+    return ratings, user_movie_matrix, user_movie_df.index, user_movie_df.columns
